@@ -1,0 +1,9 @@
+node_modules/
+
+# The manifest is fully derived from app/ — committing it is optional.
+# If you don't commit it, make sure `predev`/`prebuild` (or instrumentation.js)
+# regenerates it before the app starts.
+route-guard.manifest.json
+
+*.log
+.DS_Store
