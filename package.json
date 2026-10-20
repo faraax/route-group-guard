@@ -4,9 +4,25 @@
   "description": "Automatic Next.js route protection driven by your (public)/(private)/(ROLE) Route Groups — no manual roleRoutes maps, no hand-written middleware.",
   "type": "module",
   "main": "./src/index.js",
+  "module": "./src/index.js",
+  "types": "./types/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./instrumentation": "./src/instrumentation.js",
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./instrumentation": {
+      "types": "./types/instrumentation.d.ts",
+      "default": "./src/instrumentation.js"
+    },
+    "./middleware": {
+      "types": "./types/middleware.d.ts",
+      "default": "./src/middleware.js"
+    },
+    "./config": {
+      "types": "./types/config.d.ts",
+      "default": "./src/config/defineConfig.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
@@ -15,11 +31,13 @@
   "files": [
     "bin",
     "src",
+    "types",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "prepublishOnly": "npm test"
   },
   "keywords": [
     "nextjs",
@@ -32,6 +50,15 @@
     "jwt",
     "app-router"
   ],
+  "author": "Faraax <suny.faraz@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/faraax/route-group-guard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/faraax/route-group-guard/issues"
+  },
+  "homepage": "https://github.com/faraax/route-group-guard#readme",
   "license": "MIT",
   "engines": {
     "node": ">=18.17.0"
@@ -40,7 +67,6 @@
     "next": ">=13.4.0"
   },
   "dependencies": {
-    "dayjs": "^1.11.13",
     "jwt-decode": "^4.0.0"
   },
   "devDependencies": {

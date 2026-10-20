@@ -7,12 +7,12 @@ test('parseGroupSegment: public/private keywords', () => {
   assert.deepEqual(parseGroupSegment('private'), { access: 'private' });
 });
 
-test('parseGroupSegment: single role', () => {
-  assert.deepEqual(parseGroupSegment('ADMIN'), { roles: ['ADMIN'] });
+test('parseGroupSegment: single role via role: prefix', () => {
+  assert.deepEqual(parseGroupSegment('role:ADMIN'), { roles: ['ADMIN'] });
 });
 
 test('parseGroupSegment: multiple roles with +', () => {
-  assert.deepEqual(parseGroupSegment('ADMIN+MANAGER'), { roles: ['ADMIN', 'MANAGER'] });
+  assert.deepEqual(parseGroupSegment('role:ADMIN+MANAGER'), { roles: ['ADMIN', 'MANAGER'] });
 });
 
 test('parseGroupSegment: single permission', () => {
@@ -25,8 +25,21 @@ test('parseGroupSegment: multiple permissions with +', () => {
   });
 });
 
+test('parseGroupSegment: dotted permission keys (module.action style) pass through untouched', () => {
+  assert.deepEqual(parseGroupSegment('perm:bookings.read'), { permissions: ['bookings.read'] });
+});
+
 test('parseGroupSegment: empty segment yields empty object', () => {
   assert.deepEqual(parseGroupSegment(''), {});
+});
+
+// Regression test: a bare group name with no role:/perm: prefix must be a
+// pure no-op — this is what makes it safe to add the package to a project
+// that already uses route groups for layout organization only, like
+// `(dashboard)` or `(marketing)`.
+test('parseGroupSegment: a bare non-keyword group name is ignored, not treated as a role', () => {
+  assert.deepEqual(parseGroupSegment('dashboard'), {});
+  assert.deepEqual(parseGroupSegment('ADMIN'), {}, 'even an uppercase bare name is not a role without role:');
 });
 
 test('mergeMeta: access overrides, deepest wins', () => {

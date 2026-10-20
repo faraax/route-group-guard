@@ -41,3 +41,23 @@ test('an empty manifest plus overrides works standalone (Pages Router mode)', ()
   ]);
   assert.equal(result.length, 2);
 });
+
+// Regression test: `import manifest from './route-guard.manifest.json'` hands
+// you {generatedAt, routeCount, routes: [...]}, not a bare array — this used
+// to throw ("manifest.map is not a function") the moment a real generated
+// file was wired into a real middleware.js.
+test('accepts the raw generated manifest file shape ({routes: [...]}), not just a bare array', () => {
+  const generatedFile = { generatedAt: '2026-01-01T00:00:00.000Z', routeCount: 2, routes: manifest };
+  const result = mergeOverrides(generatedFile, []);
+  assert.deepEqual(result, manifest);
+});
+
+test('accepts an object-shaped overrides argument the same way', () => {
+  const result = mergeOverrides(manifest, { routes: [{ path: '/legacy', access: 'public' }] });
+  assert.ok(result.find((r) => r.path === '/legacy'));
+});
+
+test('tolerates missing/undefined manifest and overrides instead of throwing', () => {
+  assert.deepEqual(mergeOverrides(undefined, undefined), []);
+  assert.deepEqual(mergeOverrides(null, null), []);
+});

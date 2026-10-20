@@ -53,7 +53,7 @@ function compileRoute(routePath) {
 
   rawSegments.forEach((segment, index) => {
     const kind = classifySegment(segment);
-    score += SEGMENT_WEIGHT[kind] * 100 - index; // earlier static segments count slightly more
+    score += SEGMENT_WEIGHT[kind] * 10000 - index; // earlier static segments count slightly more
 
     if (kind === 'optionalCatchAll') {
       const name = segment.slice(5, -2); // strip "[[..." and "]]"
@@ -98,9 +98,16 @@ export function createMatcher(routes) {
     .sort((a, b) => b.compiled.score - a.compiled.score);
 
   function match(pathname) {
-    const normalized = pathname.length > 1 && pathname.endsWith('/')
-      ? pathname.slice(0, -1)
-      : pathname;
+    let decoded = pathname;
+    try {
+      decoded = decodeURIComponent(pathname);
+    } catch {
+      // Malformed percent-encoding (e.g. /%ZZ) - fall back to raw pathname
+    }
+
+    const normalized = decoded.length > 1 && decoded.endsWith('/')
+      ? decoded.slice(0, -1)
+      : decoded;
 
     for (const { route, compiled } of compiledRoutes) {
       const result = compiled.regex.exec(normalized);

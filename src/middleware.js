@@ -10,9 +10,11 @@ const DEFAULT_REDIRECTS = { login: '/login', home: '/' };
  * @typedef {import('./manifest/matcher.js').ManifestRoute} ManifestRoute
  *
  * @typedef {Object} RouteGuardOptions
- * @property {ManifestRoute[]} [manifest] - the generated manifest, statically
- *   imported from wherever the CLI wrote it. Omit (or pass []) for a pure
- *   Pages-Router / fully-manual setup and rely on `overrides` alone.
+ * @property {ManifestRoute[]|{routes: ManifestRoute[]}} [manifest] - the
+ *   generated manifest. Pass the whole statically-imported module
+ *   (`import manifest from './route-guard.manifest.json'`) or just its
+ *   `.routes` array — both work. Omit (or pass []) for a pure Pages-Router
+ *   / fully-manual setup and rely on `overrides` alone.
  * @property {import('./config/defineConfig.js').RouteOverride[]} [overrides] -
  *   hand-written rules (from `routeGuard.config.js`) merged on top of
  *   `manifest`, matched by exact path. Also how Pages Router apps define
@@ -54,7 +56,76 @@ const DEFAULT_REDIRECTS = { login: '/login', home: '/' };
  * @param {RouteGuardOptions} [options]
  * @returns {(req: import('next/server').NextRequest) => import('next/server').NextResponse}
  */
+function isPlainObject(val) {
+  return typeof val === 'object' && val !== null && !Array.isArray(val);
+}
+
+const CALLBACK_NAMES = [
+  'getToken',
+  'decodeToken',
+  'verifyToken',
+  'getRole',
+  'getPermissions',
+  'getRoleHome',
+  'onUnauthenticated',
+  'onUnauthorized',
+];
+
 export function createRouteGuardMiddleware(options = {}) {
+  if (options === null || typeof options !== 'object' || Array.isArray(options)) {
+    throw new TypeError('createRouteGuardMiddleware: options must be a plain object');
+  }
+
+  if (options.manifest !== undefined) {
+    if (
+      typeof options.manifest !== 'object' ||
+      options.manifest === null ||
+      (!Array.isArray(options.manifest) && !Array.isArray(options.manifest.routes))
+    ) {
+      throw new TypeError('createRouteGuardMiddleware: manifest must be an array or an object with a "routes" array');
+    }
+  }
+
+  if (options.overrides !== undefined) {
+    if (
+      typeof options.overrides !== 'object' ||
+      options.overrides === null ||
+      (!Array.isArray(options.overrides) && !Array.isArray(options.overrides.routes))
+    ) {
+      throw new TypeError('createRouteGuardMiddleware: overrides must be an array or an object with a "routes" array');
+    }
+  }
+
+  if (options.cookieName !== undefined) {
+    if (typeof options.cookieName !== 'string' || options.cookieName.trim() === '') {
+      throw new TypeError('createRouteGuardMiddleware: cookieName must be a non-empty string');
+    }
+  }
+
+  if (options.defaultAccess !== undefined) {
+    if (options.defaultAccess !== 'public' && options.defaultAccess !== 'private') {
+      throw new TypeError('createRouteGuardMiddleware: defaultAccess must be "public" or "private"');
+    }
+  }
+
+  if (options.redirects !== undefined) {
+    if (!isPlainObject(options.redirects)) {
+      throw new TypeError('createRouteGuardMiddleware: redirects must be a plain object');
+    }
+  }
+
+  if (options.redirectAuthenticatedFrom !== undefined) {
+    if (!Array.isArray(options.redirectAuthenticatedFrom)) {
+      throw new TypeError('createRouteGuardMiddleware: redirectAuthenticatedFrom must be an array');
+    }
+  }
+
+  for (const name of CALLBACK_NAMES) {
+    if (options[name] !== undefined && typeof options[name] !== 'function') {
+      throw new TypeError(`createRouteGuardMiddleware: ${name} must be a function`);
+    }
+  }
+
   const {
     manifest = [],
     overrides,
@@ -97,6 +168,10 @@ export function createRouteGuardMiddleware(options = {}) {
     if (decision.allowed) {
       if (session.isAuthenticated && redirectAuthenticatedFrom.includes(pathname)) {
         const target = (getRoleHome && getRoleHome(session.role, session)) || resolvedRedirects.home;
+        const targetPath = new URL(target, req.url).pathname;
+        if (targetPath === pathname) {
+          return NextResponse.next();
+        }
         return NextResponse.redirect(new URL(target, req.url));
       }
       return NextResponse.next();
@@ -106,6 +181,13 @@ export function createRouteGuardMiddleware(options = {}) {
       if (onUnauthenticated) {
         const custom = onUnauthenticated(req, session);
         if (custom) return custom;
+      }
+      const loginPath = new URL(resolvedRedirects.login, req.url).pathname;
+      if (loginPath === pathname) {
+        console.warn(
+          `[route-group-guard] Redirect loop detected: unauthenticated login redirect "${resolvedRedirects.login}" matches current path "${pathname}". Passing through to prevent infinite redirect loop.`
+        );
+        return NextResponse.next();
       }
       return NextResponse.redirect(new URL(resolvedRedirects.login, req.url));
     }
@@ -117,6 +199,13 @@ export function createRouteGuardMiddleware(options = {}) {
     }
     const fallback =
       (getRoleHome && getRoleHome(session.role, session)) || resolvedRedirects.unauthorized || resolvedRedirects.home;
+    const fallbackPath = new URL(fallback, req.url).pathname;
+    if (fallbackPath === pathname) {
+      console.warn(
+        `[route-group-guard] Redirect loop detected: unauthorized redirect "${fallback}" matches current path "${pathname}". Passing through to prevent infinite redirect loop.`
+      );
+      return NextResponse.next();
+    }
     return NextResponse.redirect(new URL(fallback, req.url));
   };
 }

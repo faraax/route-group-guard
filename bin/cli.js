@@ -26,9 +26,21 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--app-dir') {
-      args.appDir = argv[++i];
+      const val = argv[++i];
+      if (!val || val.startsWith('-')) {
+        console.error('[route-group-guard] Missing value for --app-dir option');
+        process.exitCode = 1;
+        return null;
+      }
+      args.appDir = val;
     } else if (arg === '--out') {
-      args.out = argv[++i];
+      const val = argv[++i];
+      if (!val || val.startsWith('-')) {
+        console.error('[route-group-guard] Missing value for --out option');
+        process.exitCode = 1;
+        return null;
+      }
+      args.out = val;
     } else if (arg === '--watch') {
       args.watch = true;
     } else if (arg === '--silent') {
@@ -70,9 +82,11 @@ Examples:
 function run(args, cwd) {
   const appDir = args.appDir ? path.resolve(cwd, args.appDir) : detectAppDir(cwd);
 
-  if (!appDir) {
+  if (!appDir || !fs.existsSync(appDir)) {
     console.error(
-      '[route-group-guard] Could not find "app" or "src/app". Pass --app-dir <path> explicitly.'
+      args.appDir
+        ? `[route-group-guard] Directory does not exist: "${appDir}".`
+        : '[route-group-guard] Could not find "app" or "src/app". Pass --app-dir <path> explicitly.'
     );
     process.exitCode = 1;
     return;
@@ -97,6 +111,9 @@ function main() {
   const cwd = process.cwd();
   const argv = process.argv.slice(2);
   const args = parseArgs(argv);
+  if (!args) {
+    return;
+  }
 
   if (args.help || (args._[0] !== 'generate' && args._[0] !== 'sync' && args._[0] !== 'build' && !args.version)) {
     printHelp();
@@ -112,10 +129,26 @@ function main() {
 
   if (args.watch) {
     const appDir = args.appDir ? path.resolve(cwd, args.appDir) : detectAppDir(cwd);
+    if (!appDir || !fs.existsSync(appDir)) {
+      return;
+    }
     console.log(`[route-group-guard] watching ${path.relative(cwd, appDir)} for changes...`);
     let pending = null;
+    let watcher = null;
+
+    const cleanup = () => {
+      if (watcher) {
+        watcher.close();
+        watcher = null;
+      }
+      process.exit(0);
+    };
+
+    process.once('SIGINT', cleanup);
+    process.once('SIGTERM', cleanup);
+
     try {
-      fs.watch(appDir, { recursive: true }, () => {
+      watcher = fs.watch(appDir, { recursive: true }, () => {
         clearTimeout(pending);
         pending = setTimeout(() => run(args, cwd), 150);
       });

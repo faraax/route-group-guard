@@ -8,7 +8,7 @@ import {
   stripGroupParens,
 } from './parser.js';
 
-const PAGE_FILENAMES = ['page.js', 'page.jsx', 'page.ts', 'page.tsx'];
+const PAGE_FILENAMES = ['page.js', 'page.jsx', 'page.ts', 'page.tsx', 'page.mdx'];
 
 /**
  * Folders Next.js itself never turns into routes, or that this package
@@ -37,12 +37,31 @@ function isIgnoredSegment(name) {
  * middleware despite middleware having no `fs` access itself.
  *
  * @param {string} appDir - absolute path to the `app/` directory.
- * @returns {Array<{path: string, access?: string, roles: string[], permissions: string[]}>}
+ * @returns {{
+ *   routes: Array<{path: string, access?: string, roles: string[], permissions: string[]}>,
+ *   ignoredGroups: string[]
+ * }} `ignoredGroups` lists the distinct bare route-group names encountered
+ *   that weren't `public`/`private`/`role:...`/`perm:...` — ordinary
+ *   organizational groups (like `(dashboard)`) that were correctly left
+ *   alone. Surfaced so you can eyeball that nothing unexpected got swept up.
  */
 export function scanAppDir(appDir) {
   const routes = [];
+  const ignoredGroups = new Set();
 
-  function walk(dir, urlSegments, meta) {
+  function walk(dir, urlSegments, meta, seen = new Set()) {
+    let realDir;
+    try {
+      realDir = fs.realpathSync(dir);
+    } catch {
+      realDir = dir;
+    }
+    if (seen.has(realDir)) {
+      return;
+    }
+    const nextSeen = new Set(seen);
+    nextSeen.add(realDir);
+
     let entries;
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -67,12 +86,16 @@ export function scanAppDir(appDir) {
       if (isIgnoredSegment(name)) continue;
 
       if (isRouteGroupSegment(name)) {
-        const segmentMeta = parseGroupSegment(stripGroupParens(name));
-        walk(path.join(dir, name), urlSegments, mergeMeta(meta, segmentMeta));
+        const rawName = stripGroupParens(name);
+        const segmentMeta = parseGroupSegment(rawName);
+        if (Object.keys(segmentMeta).length === 0) {
+          ignoredGroups.add(rawName);
+        }
+        walk(path.join(dir, name), urlSegments, mergeMeta(meta, segmentMeta), nextSeen);
         continue;
       }
 
-      walk(path.join(dir, name), [...urlSegments, name], meta);
+      walk(path.join(dir, name), [...urlSegments, name], meta, nextSeen);
     }
   }
 
@@ -83,9 +106,9 @@ export function scanAppDir(appDir) {
   walk(appDir, [], emptyMeta());
 
   // Stable order makes generated JSON diff-friendly in git.
-  routes.sort((a, b) => a.path.localeCompare(b.path));
+  routes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
-  return routes;
+  return { routes, ignoredGroups: [...ignoredGroups].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)) };
 }
 
 /**

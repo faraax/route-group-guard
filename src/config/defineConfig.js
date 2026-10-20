@@ -30,6 +30,28 @@
  * @param {RouteOverride[]} overrides
  * @returns {RouteOverride[]}
  */
+const KNOWN_KEYS = new Set(['path', 'access', 'roles', 'permissions', 'roleMode', 'permissionMode']);
+
 export function defineConfig(overrides) {
+  if (!Array.isArray(overrides)) {
+    throw new TypeError('defineConfig expects an array of route override objects');
+  }
+
+  for (let i = 0; i < overrides.length; i++) {
+    const item = overrides[i];
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      throw new TypeError(`defineConfig: item at index ${i} must be a route override object`);
+    }
+    if (typeof item.path !== 'string' || item.path.trim() === '') {
+      throw new TypeError(`defineConfig: item at index ${i} must have a non-empty string "path"`);
+    }
+
+    for (const key of Object.keys(item)) {
+      if (!KNOWN_KEYS.has(key)) {
+        console.warn(`[route-group-guard] defineConfig: unknown property "${key}" in route override for "${item.path}"`);
+      }
+    }
+  }
+
   return overrides;
 }

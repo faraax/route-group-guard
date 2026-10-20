@@ -75,3 +75,26 @@ test('unmatched paths return null', () => {
   const { match } = createMatcher(baseRoutes);
   assert.equal(match('/totally/unknown/path'), null);
 });
+
+test('handles URL-encoded paths and normalizes them', () => {
+  const { match } = createMatcher(baseRoutes);
+  const result = match('/%61bout');
+  assert.notEqual(result, null);
+  assert.equal(result.path, '/about');
+});
+
+test('handles URL-encoded characters in dynamic parameters', () => {
+  const { match } = createMatcher(baseRoutes);
+  const result = match('/blog/%68ello-%77orld');
+  assert.notEqual(result, null);
+  assert.equal(result.path, '/blog/[slug]');
+  assert.equal(result.params.slug, 'hello-world');
+});
+
+test('gracefully handles malformed percent-encoded paths without throwing', () => {
+  const { match } = createMatcher(baseRoutes);
+  assert.doesNotThrow(() => {
+    const res = match('/%ZZ');
+    assert.equal(res, null);
+  });
+});

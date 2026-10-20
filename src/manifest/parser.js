@@ -1,23 +1,33 @@
 /**
  * Parses the naming convention used inside Next.js Route Group folders,
- * e.g. `(public)`, `(private)`, `(ADMIN)`, `(ADMIN+MANAGER)`, `(perm:billing)`.
+ * e.g. `(public)`, `(private)`, `(role:ADMIN)`, `(role:ADMIN+MANAGER)`,
+ * `(perm:billing)`.
  *
  * Convention (case-sensitive on purpose, to avoid silent typos being
  * treated as a brand-new role):
  *
- *   (public)                -> access: 'public'
- *   (private)                -> access: 'private'
- *   (ADMIN)                  -> roles: ['ADMIN']
- *   (ADMIN+MANAGER)          -> roles: ['ADMIN', 'MANAGER']   (ANY of these)
- *   (perm:manage_billing)    -> permissions: ['manage_billing']
- *   (perm:manage_billing+view_reports) -> permissions: [...]  (ANY of these)
+ *   (public)                     -> access: 'public'
+ *   (private)                    -> access: 'private'
+ *   (role:ADMIN)                 -> roles: ['ADMIN']
+ *   (role:ADMIN+MANAGER)         -> roles: ['ADMIN', 'MANAGER']   (ANY of these)
+ *   (perm:manage_billing)        -> permissions: ['manage_billing']
+ *   (perm:manage_billing+view_reports) -> permissions: [...]      (ANY of these)
  *
- * Anything that isn't literally `public` or `private`, and doesn't start
- * with `perm:`, is assumed to be one or more role names.
+ * Anything else — including plain organizational route groups like
+ * `(dashboard)` or `(marketing)`, which are a completely standard Next.js
+ * pattern for giving a section of routes its own layout with no access
+ * implications at all — is intentionally ignored (returns `{}`). Roles
+ * require the explicit `role:` prefix specifically so this package is
+ * safe to add to a project that already uses bare route groups for
+ * layout purposes: without that prefix, a group like `(dashboard)` would
+ * otherwise be silently (mis)read as requiring a role literally named
+ * "dashboard", which doesn't exist — quietly locking everyone out of
+ * every route under it.
  */
 
 const RESERVED = new Set(['public', 'private']);
 const PERM_PREFIX = 'perm:';
+const ROLE_PREFIX = 'role:';
 
 /**
  * @param {string} rawSegmentName - folder name WITHOUT the parentheses,
@@ -44,12 +54,18 @@ export function parseGroupSegment(rawSegmentName) {
     return list.length > 0 ? { permissions: list } : {};
   }
 
-  const roles = name
-    .split('+')
-    .map((r) => r.trim())
-    .filter(Boolean);
+  if (name.startsWith(ROLE_PREFIX)) {
+    const roles = name
+      .slice(ROLE_PREFIX.length)
+      .split('+')
+      .map((r) => r.trim())
+      .filter(Boolean);
+    return roles.length > 0 ? { roles } : {};
+  }
 
-  return roles.length > 0 ? { roles } : {};
+  // Not a recognized keyword — a plain organizational route group. Ignored
+  // on purpose; see the "Anything else" note above.
+  return {};
 }
 
 /**

@@ -8,16 +8,22 @@ import { scanAppDir, lintRoutes } from './scanner.js';
  * auto-sync helper so both stay in sync.
  *
  * @param {{ appDir: string, outFile: string, silent?: boolean }} options
- * @returns {{ routes: ReturnType<typeof scanAppDir>, warnings: string[], outFile: string }}
+ * @returns {{ routes: object[], warnings: string[], ignoredGroups: string[], outFile: string }}
  */
 export function generateManifest({ appDir, outFile, silent = false }) {
-  const routes = scanAppDir(appDir);
+  const { routes, ignoredGroups } = scanAppDir(appDir);
   const warnings = lintRoutes(routes);
 
   if (!silent) {
     for (const warning of warnings) {
       // eslint-disable-next-line no-console
       console.warn(`[route-group-guard] warning: ${warning}`);
+    }
+    if (ignoredGroups.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[route-group-guard] ${ignoredGroups.length} organizational route group(s) left alone (no access effect): ${ignoredGroups.map((g) => `(${g})`).join(', ')}`
+      );
     }
   }
 
@@ -30,5 +36,5 @@ export function generateManifest({ appDir, outFile, silent = false }) {
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, JSON.stringify(output, null, 2) + '\n', 'utf8');
 
-  return { routes, warnings, outFile };
+  return { routes, warnings, ignoredGroups, outFile };
 }

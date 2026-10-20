@@ -2,9 +2,9 @@
 
 Automatic Next.js route protection driven by the Route Groups you're
 already using to organize your `app/` directory. Wrap a folder in
-`(public)` or `(private)`, nest a role like `(ADMIN)` inside, and the
-routing rules are generated for you — no hand-maintained `roleRoutes`
-object, no manually-written redirect logic in `middleware.js`.
+`(public)` or `(private)`, nest a role like `(role:ADMIN)` inside, and
+the routing rules are generated for you — no hand-maintained
+`roleRoutes` object, no manually-written redirect logic in `proxy.js`.
 
 ```
 app/
@@ -12,13 +12,15 @@ app/
 │   ├── page.js              →  /            (no auth required)
 │   └── login/page.js        →  /login
 └── (private)/
-    └── (ADMIN)/
+    └── (role:ADMIN)/
         └── admindashboard/page.js  →  /admindashboard  (needs a valid
                                                            session + role ADMIN)
 ```
 
 ```js
-// middleware.js
+// proxy.js  (Next.js <16: name this file middleware.js instead — same
+// content, same export, just the file-convention name changed in Next 16.
+// See "A note on proxy.js vs middleware.js" below.)
 import { createRouteGuardMiddleware } from 'route-group-guard';
 import manifest from './route-guard.manifest.json';
 
@@ -38,17 +40,40 @@ That's the whole integration. Run `npx route-group-guard generate` once
 (or let `predev`/`prebuild` do it for you) and every route in `app/` is
 guarded according to which Route Group folders it sits inside.
 
+## A note on proxy.js vs middleware.js
+
+Next.js 16 deprecated the `middleware.js` file convention and renamed it
+to `proxy.js` — same feature, same behavior, just a different filename
+(and, per Next's own docs, a nudge toward using it only for lightweight
+routing decisions rather than heavier logic). It's a pure rename:
+`createRouteGuardMiddleware` returns a plain function, and Next.js
+doesn't care what you call the file that default-exports it.
+
+- **Next.js 16+:** name the file `proxy.js`.
+- **Next.js 13.4–15.x:** name it `middleware.js` (`proxy.js` isn't
+  recognized yet).
+- **Next.js 16, not yet migrated:** `middleware.js` still works today —
+  Next.js logs a deprecation warning but still runs it. Don't leave it
+  there indefinitely; there are reports of it being silently skipped
+  after certain upgrades, which would mean every route it guards quietly
+  becomes public. Rename it to `proxy.js` (or run
+  `npx @next/codemod@latest middleware-to-proxy .`) rather than relying
+  on the deprecated path.
+
+Everything else in this README — the manifest, `overrides`, all the
+options below — is identical either way.
+
 ## Why a generated manifest, not a webpack plugin
 
 Next.js Edge Middleware doesn't have the Node.js `fs` module, so it can't
 read your `app/` folder structure at request time — there's no way for
-`middleware.js` to look at disk and ask "is this route inside `(private)`?"
-while it's running.
+`proxy.js`/`middleware.js` to look at disk and ask "is this route inside
+`(private)`?" while it's running.
 
 This package solves that with a **build-time CLI step**: it walks `app/`
 once, resolves the Route Group naming convention into a plain list of
 routes with their access rules, and writes it to a JSON file. Your
-`middleware.js` then does a normal, static `import manifest from
+`proxy.js`/`middleware.js` then does a normal, static `import manifest from
 './route-guard.manifest.json'`. Because it's a static import, Next.js's
 bundler (webpack or Turbopack — this works with both) inlines the data
 directly into the compiled middleware at build time. Nothing gets read
@@ -82,15 +107,44 @@ need to add them yourself.
 | --- | --- |
 | `(public)` | No authentication required |
 | `(private)` | Requires a valid, unexpired session |
-| `(ADMIN)` | Requires role `ADMIN` (implies private) |
-| `(ADMIN+MANAGER)` | Requires role `ADMIN` **or** `MANAGER` |
+| `(role:ADMIN)` | Requires role `ADMIN` (implies private) |
+| `(role:ADMIN+MANAGER)` | Requires role `ADMIN` **or** `MANAGER` |
 | `(perm:manage_billing)` | Requires permission `manage_billing` |
 | `(perm:manage_billing+view_reports)` | Requires **either** permission |
 
 Names are case-sensitive on purpose, so a typo becomes a new (broken)
-role instead of silently matching an existing one. Anything that isn't
-literally `public` or `private`, and doesn't start with `perm:`, is
-treated as one or more role names.
+role instead of silently matching an existing one. Anything else — any
+folder name that isn't `public`, `private`, or `role:...`/`perm:...` —
+is left completely alone.
+
+### Organizational route groups are safe to keep
+
+Route Groups are a general Next.js feature, not something this package
+invented, and plenty of real projects already use bare groups purely to
+give a section its own layout — `(dashboard)`, `(marketing)`,
+`(auth)` — with no access-control meaning at all. Those are untouched:
+only `public`, `private`, `role:...`, and `perm:...` are recognized
+keywords, so `(dashboard)` has zero effect on guarding.
+
+This is a deliberate design choice, not an afterthought: an earlier
+version of this package treated *any* non-reserved bare folder name as
+a role, which meant a group like `(dashboard)` would have been silently
+read as requiring a role literally named `"dashboard"` — locking
+everyone out of every route beneath it, with no error and no warning.
+Requiring the explicit `role:` prefix (symmetric with `perm:`) removes
+that ambiguity entirely.
+
+For visibility, `route-group-guard generate` prints every organizational
+group it left alone:
+
+```
+[route-group-guard] 1 organizational route group(s) left alone (no access effect): (dashboard)
+```
+
+so you can eyeball that nothing unexpected got swept up. A role/permission
+group nested *inside* an organizational one works normally —
+`(dashboard)/(private)/(role:ADMIN)/settings/page.js` still guards
+`/settings` — only the plain `(dashboard)` layer itself is a no-op.
 
 ### How nesting combines
 
@@ -109,7 +163,7 @@ Roles and permissions are independent gates — if both are present on a
 route, the user must satisfy both:
 
 ```
-(private)/(ADMIN)/billing/(perm:manage_billing)/page.js
+(private)/(role:ADMIN)/billing/(perm:manage_billing)/page.js
   → /billing needs role ADMIN *and* permission manage_billing
 ```
 
@@ -246,7 +300,7 @@ export default defineConfig([
 ```
 
 ```js
-// middleware.js
+// proxy.js  (middleware.js on Next.js <16 — see the note above)
 import { createRouteGuardMiddleware } from 'route-group-guard';
 import manifest from './route-guard.manifest.json'; // omit entirely on Pages Router
 import overrides from './routeGuard.config.js';
@@ -287,7 +341,8 @@ There's no folder convention to scan (Pages Router has no Route Groups),
 so skip the CLI entirely and define your whole route list as `overrides`:
 
 ```js
-// middleware.js
+// proxy.js  (middleware.js on Next.js <16 — the rename applies here too,
+// since proxy/middleware sits in front of both routers)
 import { createRouteGuardMiddleware } from 'route-group-guard';
 import { defineConfig } from 'route-group-guard';
 

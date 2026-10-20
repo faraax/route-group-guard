@@ -1,4 +1,3 @@
-import dayjs from 'dayjs';
 import { jwtDecode } from 'jwt-decode';
 
 /**
@@ -45,13 +44,26 @@ export function defaultDecodeToken(rawCookieValue) {
   }
 
   if (!tokenString) return null;
-  return jwtDecode(tokenString);
+
+  try {
+    return jwtDecode(tokenString);
+  } catch {
+    // Malformed JWT — return null instead of throwing so this function
+    // is safe to call standalone (outside resolveSession's try/catch).
+    return null;
+  }
 }
 
-/** @param {{exp?: number}|null} payload */
-export function defaultVerifyToken(payload) {
+/**
+ * @param {{exp?: number}|null} payload
+ * @param {number} [clockToleranceSec=60] — seconds of leeway to handle
+ *   minor clock skew between the token issuer and this server. Standard
+ *   JWT libraries default to 60 s; set to 0 for strict checking.
+ */
+export function defaultVerifyToken(payload, clockToleranceSec = 60) {
   if (!payload || typeof payload.exp !== 'number') return false;
-  return dayjs.unix(payload.exp).isAfter(dayjs());
+  const nowSec = Math.floor(Date.now() / 1000);
+  return payload.exp + clockToleranceSec > nowSec;
 }
 
 /** @param {Record<string, unknown>|null} payload */
